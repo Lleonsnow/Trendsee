@@ -68,6 +68,7 @@ class PostsService:
             offset=offset,
             limit=limit,
         )
+        await self._rebuild_feed_cache(user_id=user_id)
         return {
             'items': [_post_to_response(p) for p in items],
             'total': total,
