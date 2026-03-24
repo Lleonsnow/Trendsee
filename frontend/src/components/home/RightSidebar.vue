@@ -169,8 +169,7 @@ const selectedPosterSrc = computed(() => {
 })
 
 const visiblePosts = computed(() => {
-  if (posts.value.length <= 2) return posts.value
-  return posts.value.slice(0, -2)
+  return posts.value
 })
 
 const canLoadMore = computed(() => hasMore.value && !isLoading.value && !isPageLoading.value)

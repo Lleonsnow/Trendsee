@@ -85,7 +85,7 @@ async function fetchUserPostsMock(params: {
   // Небольшая задержка, чтобы увидеть индикатор загрузки.
   await new Promise((r) => setTimeout(r, 350))
 
-  const total = 47
+  const total = 15
   const start = params.offset
   const endExclusive = Math.min(total, start + params.limit)
   const items: Post[] = []
