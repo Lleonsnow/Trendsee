@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
       <video
         ref="videoEl"
         class="media-video__el"
-        :poster="posterSrc ?? '/image.png'"
+        :poster="posterSrc ?? '/demo.jpg'"
         :src="props.videoSrc ?? '/test.mp4'"
         muted
         playsinline
@@ -200,7 +200,6 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div v-if="dimmed" class="media-video__dim" aria-hidden="true" />
-      <div class="media-video__duration">до 1 минуты</div>
     </div>
 
     <div v-if="variant !== 'thumb'" class="stats" aria-label="Статистика">
@@ -271,7 +270,7 @@ onBeforeUnmount(() => {
             ref="viewerVideoEl"
             class="viewer__video"
             :src="props.videoSrc ?? '/test.mp4'"
-            :poster="posterSrc ?? '/image.png'"
+            :poster="posterSrc ?? '/demo.jpg'"
             controls
             playsinline
             preload="metadata"
@@ -431,30 +430,6 @@ onBeforeUnmount(() => {
   justify-content: center;
   border: 0;
   cursor: pointer;
-}
-
-.media-video__duration {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  height: 18px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(12, 16, 31, 0.5);
-  color: #ffffff;
-  font-family: var(--heading);
-  font-weight: 600;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.media-video--thumb .media-video__duration {
-  left: 10px;
-  bottom: 10px;
-  height: 16px;
-  padding: 0 9px;
-  font-size: 11px;
-  line-height: 16px;
 }
 
 .media-video__dim {

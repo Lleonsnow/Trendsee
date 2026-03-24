@@ -21,6 +21,9 @@ const emit = defineEmits<{
 
 const posts = ref<Post[]>([])
 const isLoading = ref(false)
+const isPageLoading = ref(false)
+const hasMore = ref(true)
+const pageSize = 6
 
 const videoTopicLabel = 'Тема видео'
 const musicLabel = 'Tyga – Pop it off'
@@ -144,20 +147,13 @@ const curatedPostTitles = [
 
 onMounted(async () => {
   if (posts.value.length > 0) return
-
-  isLoading.value = true
-  try {
-    const page = await fetchUserPostsPage({ offset: 0, limit: 6 })
-    posts.value = page.items
-  } finally {
-    isLoading.value = false
-  }
+  await loadNextPage(true)
 })
 
 function posterSrcByIndex(index: number): string {
-  if (index < 0) return '/image.png'
+  if (index < 0) return '/demo.jpg'
   // Демо: ожидаем файлы в public/blogers/bloger_1.jpg ... bloger_4.jpg
-  if (index > 3) return '/image.png'
+  if (index > 3) return '/demo.jpg'
   return `/blogers/bloger_${index + 1}.jpg`
 }
 
@@ -167,8 +163,8 @@ const selectedIndex = computed(() => {
 })
 
 const selectedPosterSrc = computed(() => {
-  if (!props.selectedPost) return '/image.png'
-  if (selectedIndex.value < 0) return '/image.png'
+  if (!props.selectedPost) return '/demo.jpg'
+  if (selectedIndex.value < 0) return '/demo.jpg'
   return posterSrcByIndex(selectedIndex.value)
 })
 
@@ -176,6 +172,8 @@ const visiblePosts = computed(() => {
   if (posts.value.length <= 2) return posts.value
   return posts.value.slice(0, -2)
 })
+
+const canLoadMore = computed(() => hasMore.value && !isLoading.value && !isPageLoading.value)
 
 function emitSelect(post: Post) {
   emit('select', post)
@@ -188,16 +186,74 @@ function displayPostTitle(post: Post, index: number): string {
   return /^(Post|Пост)\s*#\d+$/i.test(raw) ? fallback : raw
 }
 
-function buildPostPreview(text: string): string {
+function buildSemanticPreviewByTitle(title: string): string {
+  const normalizedTitle = title.toLowerCase()
+
+  if (normalizedTitle.includes('ошиб')) {
+    return 'Короткий разбор частых ошибок и понятные шаги, как исправить их без лишней теории.'
+  }
+
+  if (normalizedTitle.includes('совет') || normalizedTitle.includes('работают')) {
+    return 'Показываем, какие советы действительно дают результат, а какие создают только ложное ожидание.'
+  }
+
+  if (normalizedTitle.includes('решени') || normalizedTitle.includes('логик')) {
+    return 'Последовательный путь от симптома к решению: на что смотреть в первую очередь и что делать дальше.'
+  }
+
+  if (normalizedTitle.includes('разбор')) {
+    return 'Практичный разбор с акцентом на действия: что внедрить сразу, чтобы увидеть заметный эффект.'
+  }
+
+  return 'Содержательное превью публикации с краткой сутью, ключевой идеей и ожидаемым практическим результатом.'
+}
+
+function buildPostPreview(text: string, title: string): string {
   const normalized = text.replace(/\s+/g, ' ').trim()
-  if (!normalized) return 'Описание публикации пока отсутствует.'
+  const isDemoText =
+    /демо-текст/i.test(normalized) ||
+    /позже вы подставите реальные данные/i.test(normalized) ||
+    /^это демо/i.test(normalized)
+
+  if (!normalized || isDemoText) return buildSemanticPreviewByTitle(title)
   return normalized.length > 96 ? `${normalized.slice(0, 96)}...` : normalized
+}
+
+async function loadNextPage(isInitial = false): Promise<void> {
+  if (!isInitial && !canLoadMore.value) return
+
+  if (isInitial) isLoading.value = true
+  else isPageLoading.value = true
+
+  try {
+    const page = await fetchUserPostsPage({ offset: posts.value.length, limit: pageSize })
+    posts.value = posts.value.concat(page.items)
+    hasMore.value = page.has_more
+  } finally {
+    if (isInitial) isLoading.value = false
+    else isPageLoading.value = false
+  }
+}
+
+function onFeedScroll(event: Event): void {
+  if (!canLoadMore.value) return
+  const target = event.target as HTMLElement | null
+  if (!target) return
+
+  const remaining = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (remaining <= 500) {
+    void loadNextPage(false)
+  }
 }
 </script>
 
 <template>
   <aside class="sidebar">
-    <div class="sidebar__feed" :class="{ 'sidebar__feed--dimmed': props.selectedPost != null }">
+    <div
+      class="sidebar__feed"
+      :class="{ 'sidebar__feed--dimmed': props.selectedPost != null }"
+      @scroll.passive="onFeedScroll"
+    >
       <h2 class="sidebar__listTitle">Блогеры</h2>
 
       <div v-if="isLoading" class="sidebar__loading" role="status">Загрузка...</div>
@@ -213,18 +269,23 @@ function buildPostPreview(text: string): string {
         <MediaPanel variant="thumb" :posterSrc="posterSrcByIndex(idx)" />
         <div class="blogger__body">
           <div class="blogger__name">{{ displayPostTitle(p, idx) }}</div>
-          <div class="blogger__preview">{{ buildPostPreview(p.text) }}</div>
+          <div class="blogger__preview">{{ buildPostPreview(p.text, displayPostTitle(p, idx)) }}</div>
           <div class="blogger__meta">{{ formatRuDate(p.created_at) }}</div>
         </div>
       </button>
+
+      <div v-if="isPageLoading" class="sidebar__loading sidebar__loading--more" role="status">
+        Загружаем еще публикации...
+      </div>
     </div>
 
-    <div v-if="props.selectedPost" class="sidebar__overlay">
-      <div class="overlay__post">
-        <MediaPanel variant="full" :posterSrc="selectedPosterSrc" />
+    <Transition name="overlay-fade">
+      <div v-if="props.selectedPost" class="sidebar__overlay">
+        <div class="overlay__post">
+          <MediaPanel variant="full" :posterSrc="selectedPosterSrc" />
 
-        <div class="overlay__content">
-          <div class="sidebar__topic">{{ videoTopicLabel }}</div>
+          <div class="overlay__content">
+            <div class="sidebar__topic">{{ videoTopicLabel }}</div>
 
           <div class="sidebar__detailsHeader">
             <h2 class="sidebar__detailsTitle">
@@ -258,10 +319,29 @@ function buildPostPreview(text: string): string {
             </span>
           </div>
 
-          <TranscriptionBlock />
-          <EssenceBlock />
+            <div class="sidebar__detailsData">
+              <div class="sidebar__detailsDataRow">
+                <span class="sidebar__detailsLabel">User ID:</span>
+                <span class="sidebar__detailsValue">{{ props.selectedPost.user_id }}</span>
+              </div>
+              <div class="sidebar__detailsDataRow">
+                <span class="sidebar__detailsLabel">Created at:</span>
+                <span class="sidebar__detailsValue">{{ formatRuDate(props.selectedPost.created_at) }}</span>
+              </div>
+              <div class="sidebar__detailsDataRow">
+                <span class="sidebar__detailsLabel">Updated at:</span>
+                <span class="sidebar__detailsValue">{{ formatRuDate(props.selectedPost.updated_at) }}</span>
+              </div>
+              <div class="sidebar__detailsDataRow sidebar__detailsDataRow--full">
+                <span class="sidebar__detailsLabel">Text:</span>
+                <p class="sidebar__detailsText">{{ props.selectedPost.text }}</p>
+              </div>
+            </div>
 
-          <section class="structure">
+            <TranscriptionBlock />
+            <EssenceBlock />
+
+            <section class="structure">
             <div class="structure__head">
               <h3 class="structure__title">Структура</h3>
             </div>
@@ -283,9 +363,9 @@ function buildPostPreview(text: string): string {
                 </div>
               </article>
             </div>
-          </section>
+            </section>
 
-          <section class="hooks">
+            <section class="hooks">
             <div class="hooks__card">
               <article v-for="hook in hookPhrases" :key="hook.id" class="hooks__item">
                 <div class="hooks__itemHead">
@@ -297,9 +377,9 @@ function buildPostPreview(text: string): string {
                 <p class="hooks__description">{{ hook.description }}</p>
               </article>
             </div>
-          </section>
+            </section>
 
-          <section class="insights">
+            <section class="insights">
             <div class="insights__head">
               <h3 class="insights__title">Рабочие приемы</h3>
               <button class="insights__iconBtn" type="button" aria-label="Действия по рабочим приемам">
@@ -315,9 +395,9 @@ function buildPostPreview(text: string): string {
                 </p>
               </article>
             </div>
-          </section>
+            </section>
 
-          <section class="marketing">
+            <section class="marketing">
             <div class="marketing__head">
               <h3 class="marketing__title">Воронка / Маркетинг</h3>
               <button class="marketing__iconBtn" type="button" aria-label="Действия по воронке">
@@ -331,11 +411,12 @@ function buildPostPreview(text: string): string {
                 <p class="marketing__itemText">{{ item.text }}</p>
               </article>
             </div>
-          </section>
+            </section>
 
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
   </aside>
 </template>
 
@@ -403,6 +484,11 @@ function buildPostPreview(text: string): string {
   color: var(--text, #6b6375);
 }
 
+.sidebar__loading--more {
+  padding: 2px 4px 12px;
+  font-size: 13px;
+}
+
 .blogger {
   width: 100%;
   display: flex;
@@ -430,39 +516,50 @@ function buildPostPreview(text: string): string {
 .blogger__body {
   flex: 1;
   min-width: 0;
-  padding: 4px 2px 4px 0;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  justify-content: center;
+  gap: 9px;
+  justify-content: flex-start;
+  border-radius: 14px;
+  border: 1px solid rgba(16, 24, 40, 0.06);
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
 }
 
 .blogger__name {
   font-family: var(--heading);
   font-weight: 700;
-  font-size: 15px;
-  line-height: 21px;
-  color: #2b31b3;
-  white-space: nowrap;
+  font-size: 16px;
+  line-height: 22px;
+  letter-spacing: 0.1px;
+  color: #1f2a44;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .blogger__meta {
   font-family: var(--sans);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 12px;
-  line-height: 14px;
-  color: #6b7280;
+  line-height: 16px;
+  color: #556176;
   white-space: nowrap;
+  margin-top: auto;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(43, 49, 179, 0.08);
 }
 
 .blogger__preview {
   font-family: var(--sans);
   font-weight: 400;
   font-size: 13px;
-  line-height: 18px;
-  color: #4e616b;
+  line-height: 19px;
+  color: #5b667a;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -543,8 +640,8 @@ function buildPostPreview(text: string): string {
   margin: 0;
   font-family: var(--heading);
   font-weight: 700;
-  font-size: 30px;
-  line-height: 54px;
+  font-size: clamp(24px, 2.4vw, 30px);
+  line-height: 1.2;
   color: #08060d;
   flex: 1;
 }
@@ -625,6 +722,64 @@ function buildPostPreview(text: string): string {
   line-height: 21px;
   letter-spacing: 0.25px;
   white-space: nowrap;
+}
+
+.sidebar__detailsData {
+  width: 100%;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.sidebar__detailsDataRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sidebar__detailsDataRow--full {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.sidebar__detailsLabel {
+  font-family: var(--heading);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: #5b6471;
+}
+
+.sidebar__detailsValue {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 18px;
+  color: #111827;
+}
+
+.sidebar__detailsText {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 21px;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.overlay-fade-enter-active,
+.overlay-fade-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.overlay-fade-enter-from,
+.overlay-fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 .structure {
